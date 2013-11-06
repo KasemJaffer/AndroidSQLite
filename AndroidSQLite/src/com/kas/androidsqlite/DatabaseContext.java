@@ -14,7 +14,9 @@ import org.json.JSONObject;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.database.AbstractWindowedCursor;
 import android.database.Cursor;
+import android.database.CursorWindow;
 import android.database.sqlite.SQLiteDatabase;
 
 import com.google.gson.Gson;
@@ -73,6 +75,7 @@ public class DatabaseContext {
 	    * @param entity Entity to be added. The name of the class must match the name of the table in the database.
 	    * @return T returns the added Entity with id assigned .
 	    */
+	
 	public <T> T add(T entity ) {
 		HashMap<String, List<Object>> externalObjects = new HashMap<String, List<Object>>();
 		
@@ -122,7 +125,7 @@ public class DatabaseContext {
 	 */
 	public <T> T find(T entity, boolean withAllItsListFields) {
 
-		Object obj = new Object();
+
 			Cursor cursor = database.query(entity.getClass().getSimpleName(), null,
 					"id=?", new String[] { String.valueOf(getIdFromObject(entity)) }, null, null, null,
 					null);
@@ -175,11 +178,35 @@ public class DatabaseContext {
 	}
 	
 	/**
+	 * Updates a record in a table in the database
+	 * @param IdPropertyName in case the primary key is named other than "Id"
+	 * @param entity entity to be updated. the entity must have a property named id and is assigned. The name of its class must match the name of the table in the database.
+	 * @param withAllItsListFields if true, it will update the list properties in the entity. If false, the list properties will be not be updated.
+	 * @return returns the updated entity
+	 */
+	public <T> T update(T entity, String IdPropertyName,  boolean withAllItsListFields){
+		HashMap<String, List<Object>> externalObjects = new HashMap<String, List<Object>>();
+		ContentValues values = getContentValues(entity, externalObjects);
+		int result = database.update(entity.getClass().getSimpleName(), values, IdPropertyName+" = ?",
+                new String[] { String.valueOf(getIdFromObject(entity,IdPropertyName)) });	
+		
+		if(withAllItsListFields){
+			for (Entry<String, List<Object>> entry : externalObjects.entrySet()) {
+				List<Object> ext = updateAll(entry.getValue(), withAllItsListFields);
+				setObjectField(entity, entry.getKey(), ext);
+			}
+		}
+		if(result == 1) return entity;
+		else return setObjectField(entity, IdPropertyName, 0);
+	}
+	
+	/**
 	 * Updates list of records in a table in the database
 	 * @param entities list of entities to be updated. All the entities must have a property named id and is assigned. The name of its class must match the name of the table in the database.
 	 * @param withAllItsInnerListFields if true, it will update the inner list properties in the entity. If false, the inner list properties will be not be updated.
 	 * @return
 	 */
+	@SuppressWarnings("unchecked")
 	public <T> List<T> updateAll(List<T> entities, boolean withAllItsInnerListFields){
 		List<Object> insertedObjects = new ArrayList<Object>();		
 		for(Object obj : (List<Object>) entities){
@@ -252,6 +279,16 @@ public class DatabaseContext {
 		else return getDataFromCursor(cursor, entityToReturn);
 	}
 	
+	/**
+	 * 
+	 * @param entityToReturn 
+	 * @param SQLQuery i.e select * from Employee where Employee.Name='Kasem'
+	 * @return returns list of entities passed
+	 */
+	public <T> List<T> rawQuerry(T entityToReturn, String SQLQuery){	
+		Cursor cursor = database.rawQuery(SQLQuery, null);
+		return getDataFromCursor(cursor, entityToReturn);
+	}
 	
 	
 	
@@ -271,6 +308,7 @@ public class DatabaseContext {
 		return obj;
 	}
 	
+	@SuppressWarnings("unchecked")
 	private <T> List<T> addAll(List<T> listOfTableObjects, String key, Object val){
 		List<Object> insertedObjects = new ArrayList<Object>();
 		
@@ -280,25 +318,42 @@ public class DatabaseContext {
 		return (List<T>) insertedObjects;
 	}
 	
+	@SuppressWarnings("deprecation")
 	private Object getFieldValue(String colloumnName, Cursor cursor) {
 		Object obj = null;
 		int index = cursor.getColumnIndex(colloumnName);
 		if(index==-1) return null;
-		int type = cursor.getType(index);
-		switch (type) {
-		case Cursor.FIELD_TYPE_FLOAT:
-			obj = cursor.getFloat(index);
-			break;
-		case Cursor.FIELD_TYPE_INTEGER:
-			obj = cursor.getInt(index);
-			break;
-		case Cursor.FIELD_TYPE_NULL:
+
+		AbstractWindowedCursor abstractWindowedCursor = (AbstractWindowedCursor)cursor;
+		CursorWindow cursorWindow = abstractWindowedCursor.getWindow();
+		int pos = abstractWindowedCursor.getPosition();
+		if (cursor.isNull(index)) {
 			obj = null;
-			break;
-		case Cursor.FIELD_TYPE_STRING:
+		} else if (cursorWindow.isLong(pos,index)) {
+			obj = cursor.getInt(index);
+		} else if (cursorWindow.isFloat(pos, index)) {
+			obj = cursor.getFloat(index);
+		} else if (cursorWindow.isString(pos, index)) {
 			obj = cursor.getString(index);
-			break;
 		}
+	 		
+//This method is not supported in api level < 11
+//		
+//int type = cursor.getType(index);
+//		switch (type) {
+//		case Cursor.FIELD_TYPE_FLOAT:
+//			obj = cursor.getFloat(index);
+//			break;
+//		case Cursor.FIELD_TYPE_INTEGER:
+//			obj = cursor.getInt(index);
+//			break;
+//		case Cursor.FIELD_TYPE_NULL:
+//			obj = null;
+//			break;
+//		case Cursor.FIELD_TYPE_STRING:
+//			obj = cursor.getString(index);
+//			break;
+//		}
 		return obj;
 	}
 
@@ -313,6 +368,7 @@ public class DatabaseContext {
 		return allFields;
 	}
 
+	@SuppressWarnings({ "unchecked", "rawtypes" })
 	private List<String> getObjectFields(Object obj, HashMap<String, Object> iCollectionTypeAttribute) {
 		List<String> allFields = new ArrayList<String>();
 
@@ -331,6 +387,7 @@ public class DatabaseContext {
 		return allFields;
 	}
 	
+	@SuppressWarnings("unchecked")
 	private ContentValues getContentValues(Object obj, HashMap<String, List<Object>> externalObjects) {
 		ContentValues values = new ContentValues();
 		Field[] fields = obj.getClass().getDeclaredFields();
@@ -363,6 +420,22 @@ public class DatabaseContext {
 			} catch (IllegalAccessException e) {}
 		return null;
 	}
+	
+	private Object getIdFromObject(Object obj, String IdPropertyName ){
+		
+		Field[] fields = obj.getClass().getDeclaredFields();
+		for (Field field : fields)
+			try {
+				field.setAccessible(true);
+				String key = field.getName();
+				Object value = field.get(obj);	
+				if (key.equalsIgnoreCase(IdPropertyName)) {								
+					return value;
+				}
+			} catch (IllegalAccessException e) {}
+		return null;
+	}
+	
 
 	private <T> T setObjectField(T obj, String Key, Object val){
 		Field[] fields  = obj.getClass().getDeclaredFields();
@@ -379,6 +452,7 @@ public class DatabaseContext {
 		return obj;
 	}
 
+	@SuppressWarnings("unchecked")
 	private <T> List<T> getDataFromCursor(Cursor cursor, T ofTypeObject){
 		
 		List<Object> jArray = new ArrayList<Object>();
@@ -399,6 +473,7 @@ public class DatabaseContext {
 		return (List<T>) jArray;
 	}
 
+	@SuppressWarnings("unchecked")
 	private <T> List<T> getDataWithAllItsReference(Cursor cursor, T ofTypeObject){
 		
 		List<Object> jArray = new ArrayList<Object>();
