@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,6 +21,11 @@ public class DBOpenHelper extends SQLiteOpenHelper {
     private String DB_NAME;
     private final Context myContext;
 
+    /**
+     * 
+     * @param context
+     * @param DB_NAME Database name in the assets folder for example data.db 
+     */
     public DBOpenHelper (Context context, String DB_NAME) {
         super(context, DB_NAME, null, 1);
         this.myContext = context;
@@ -27,10 +33,13 @@ public class DBOpenHelper extends SQLiteOpenHelper {
         DB_PATH = myContext.getApplicationContext().getFilesDir().getPath().replace("files", "databases/");
     }
 
+    /**
+     * 
+     * @throws IOException
+     */
     public void createDatabase() throws IOException {
-        boolean vtVarMi = isDatabaseExist();
 
-        if (!vtVarMi) {
+        if (!isDatabaseExist()) {
             this.getReadableDatabase();
 
             try {
@@ -41,6 +50,19 @@ public class DBOpenHelper extends SQLiteOpenHelper {
         }
     }
 
+    /**
+     * This method deletes the current database if it exist
+     * @return returns true if it was deleted
+     */
+    public boolean deleteDatabase() {
+    	if(isDatabaseExist()){
+    		String outFileName = DB_PATH + DB_NAME;
+        	File file = new File(outFileName);
+        	return file.delete();
+    	}
+    	return false;
+    }
+    
     private void copyDataBase() throws IOException {
 
         // Open your local db as the input stream
@@ -66,20 +88,20 @@ public class DBOpenHelper extends SQLiteOpenHelper {
     }
 
     private boolean isDatabaseExist() {
-        SQLiteDatabase kontrol = null;
+        SQLiteDatabase sqliteDatabase = null;
 
         try {
             String myPath = DB_PATH + DB_NAME;
-            kontrol = SQLiteDatabase.openDatabase(myPath, null, SQLiteDatabase.OPEN_READONLY);
+            sqliteDatabase = SQLiteDatabase.openDatabase(myPath, null, SQLiteDatabase.OPEN_READONLY);
 
         } catch (SQLiteException e) {
-            kontrol = null;
+        	sqliteDatabase = null;
         }
 
-        if (kontrol != null) {
-            kontrol.close();
+        if (sqliteDatabase != null) {
+        	sqliteDatabase.close();
         }
-        return kontrol != null ? true : false;
+        return sqliteDatabase != null ? true : false;
     }
 
     public SQLiteDatabase openDataBase() throws SQLException {
